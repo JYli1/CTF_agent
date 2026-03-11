@@ -68,87 +68,160 @@ class PhaseTracker:
         return detected_phase
 
     def _detect_file_reading(self, tool_name: str, command: str, result: str) -> bool:
-        """检测是否成功读取文件"""
-        # 命令特征
-        file_read_commands = [
-            'cat ', 'head ', 'tail ', 'less ', 'more ',
-            'file_get_contents', 'readfile', 'fopen',
-            'open(', 'read()', '.read(', 'with open',
-            'curl', 'wget'
+        """
+        检测是否在目标网站上成功实现任意文件读取
+
+        关键特征：
+        - 读取了目标网站的敏感文件（如 /etc/passwd, flag.txt, config.php 等）
+        - 通过漏洞（LFI, XXE, SSRF 等）读取到了文件内容
+        """
+        command_lower = command.lower()
+        result_lower = result.lower()
+
+        # 1. 检测是否在利用文件读取漏洞
+        file_read_exploits = [
+            'file=', 'path=', 'page=', 'include=',  # LFI 参数
+            '../../', '../',  # 路径穿越
+            'file://', 'php://filter',  # PHP 伪协议
+            '/etc/passwd', '/etc/shadow', '/proc/self',  # Linux 敏感文件
+            'flag.txt', 'flag.php', 'config.php', '.env',  # CTF 常见文件
+            'xxe', 'xml', '<!entity'  # XXE
         ]
 
-        command_lower = command.lower()
-        has_read_command = any(cmd in command_lower for cmd in file_read_commands)
+        has_exploit = any(exp in command_lower for exp in file_read_exploits)
 
-        # 结果特征：不是错误信息
-        result_lower = result.lower()
+        # 2. 检测结果中是否包含文件内容特征
+        file_content_indicators = [
+            'root:x:', 'root:0:0',  # /etc/passwd 内容
+            '<?php', '<?=',  # PHP 代码
+            'flag{', 'ctf{', 'flag:',  # Flag 格式
+            'password', 'secret', 'api_key',  # 配置文件内容
+            'database', 'db_host', 'db_user'  # 数据库配置
+        ]
+
+        has_file_content = any(ind in result_lower for ind in file_content_indicators)
+
+        # 3. 排除错误情况
         is_error = any(err in result_lower for err in [
             'error', 'failed', 'permission denied', 'no such file',
-            'cannot open', 'not found', '404', '403', '500'
+            'cannot open', 'not found', '404', '403', '500',
+            'invalid', 'forbidden'
         ])
 
-        # 结果有实质内容（长度>50且不全是错误）
-        has_content = len(result.strip()) > 50 and not is_error
+        # 4. 结果有实质内容
+        has_content = len(result.strip()) > 50
 
-        return has_read_command and has_content
+        return has_exploit and (has_file_content or (has_content and not is_error))
 
     def _detect_code_execution(self, tool_name: str, command: str, result: str) -> bool:
-        """检测是否成功执行代码"""
-        # Python代码执行
-        if tool_name == "execute_python":
-            # 检查是否有输出或成功执行的迹象
-            result_lower = result.lower()
-            is_error = any(err in result_lower for err in [
-                'traceback', 'error:', 'exception:', 'syntaxerror',
-                'nameerror', 'typeerror', 'valueerror'
-            ])
-            # 有输出或没有错误
-            return len(result.strip()) > 0 and not is_error
+        """
+        检测是否在目标网站上成功实现任意代码执行（RCE）
 
-        # Shell中执行脚本
-        if tool_name == "execute_shell":
-            script_indicators = [
-                'python ', 'python3 ', 'php ', 'node ', 'ruby ',
-                'perl ', 'bash ', 'sh ', '.py', '.php', '.js'
-            ]
-            command_lower = command.lower()
-            has_script = any(ind in command_lower for ind in script_indicators)
+        关键特征：
+        - 通过漏洞在目标服务器上执行了代码
+        - 不是本地 Python 代码执行，而是远程代码执行
+        """
+        command_lower = command.lower()
+        result_lower = result.lower()
 
-            result_lower = result.lower()
-            is_error = any(err in result_lower for err in [
-                'error', 'failed', 'not found', 'cannot execute',
-                'permission denied', 'syntax error'
-            ])
+        # 1. 检测是否在利用代码执行漏洞
+        code_exec_exploits = [
+            'eval(', 'exec(', 'system(',  # PHP/Python 代码执行函数
+            'shell_exec', 'passthru', 'popen',  # PHP 命令执行
+            'unserialize', 'pickle.loads',  # 反序列化
+            '__import__', 'compile(',  # Python 动态执行
+            'cmd=', 'command=', 'exec=',  # RCE 参数
+            '<?php', '<?=',  # PHP 代码注入
+            'payload', 'exploit', 'reverse_shell'  # 明确的利用
+        ]
 
-            return has_script and not is_error
+        has_exploit = any(exp in command_lower for exp in code_exec_exploits)
 
-        return False
+        # 2. 检测是否是针对目标网站的请求
+        is_remote_target = any(indicator in command_lower for indicator in [
+            'http://', 'https://',  # 网络请求
+            'curl ', 'wget ', 'requests.',  # HTTP 客户端
+            'post(', 'get(', '.request'  # HTTP 方法
+        ])
+
+        # 3. 检测结果中是否有代码执行成功的迹象
+        exec_success_indicators = [
+            'uid=', 'gid=',  # whoami/id 命令输出
+            'www-data', 'apache', 'nginx',  # Web 服务器用户
+            '/bin/', '/usr/bin/',  # 系统路径
+            'flag{', 'ctf{',  # 直接获取 Flag
+            'root', 'admin'  # 权限相关
+        ]
+
+        has_exec_result = any(ind in result_lower for ind in exec_success_indicators)
+
+        # 4. 排除本地代码执行和错误
+        is_local_only = tool_name == "execute_python" and not is_remote_target
+
+        is_error = any(err in result_lower for err in [
+            'traceback', 'error:', 'exception:', 'failed',
+            'connection refused', 'timeout', '404', '403', '500'
+        ])
+
+        # 5. 有实质性输出
+        has_output = len(result.strip()) > 20
+
+        return (has_exploit and is_remote_target and (has_exec_result or (has_output and not is_error))) and not is_local_only
 
     def _detect_command_execution(self, tool_name: str, command: str, result: str) -> bool:
-        """检测是否成功执行系统命令"""
+        """
+        检测是否在目标网站上成功实现任意命令执行
+
+        关键特征：
+        - 通过漏洞在目标服务器上执行了系统命令
+        - 获取到了目标服务器的系统信息
+        """
         if tool_name != "execute_shell":
             return False
 
-        # 系统命令特征
-        system_commands = [
-            'ls', 'pwd', 'whoami', 'id', 'uname', 'hostname',
-            'ps', 'netstat', 'ifconfig', 'ip addr', 'env',
-            'echo', 'cat /etc/', 'find /', 'grep'
+        command_lower = command.lower()
+        result_lower = result.lower()
+
+        # 1. 检测是否在利用命令执行漏洞
+        cmd_exec_exploits = [
+            'cmd=', 'command=', 'exec=', 'ping=',  # 命令注入参数
+            ';', '|', '&&', '||', '`', '$(',  # 命令连接符
+            'curl ', 'wget ', 'nc ', 'netcat',  # 常用命令
+            'bash -c', 'sh -c', '/bin/sh',  # Shell 调用
         ]
 
-        command_lower = command.lower()
-        has_system_cmd = any(cmd in command_lower for cmd in system_commands)
+        has_exploit = any(exp in command_lower for exp in cmd_exec_exploits)
 
-        # 结果特征
-        result_lower = result.lower()
-        is_error = any(err in result_lower for err in [
-            'command not found', 'permission denied', 'cannot access',
-            'no such file', 'failed'
+        # 2. 检测是否针对远程目标
+        is_remote_target = any(indicator in command_lower for indicator in [
+            'http://', 'https://',
+            'requests.', 'curl ', 'wget '
         ])
 
-        has_output = len(result.strip()) > 0
+        # 3. 检测结果中是否有命令执行成功的特征
+        cmd_success_indicators = [
+            'uid=', 'gid=', 'groups=',  # id 命令
+            'linux', 'ubuntu', 'debian', 'centos',  # uname 输出
+            '/home/', '/var/', '/etc/', '/usr/',  # 文件系统路径
+            'www-data', 'apache', 'nginx', 'root',  # 用户名
+            'flag{', 'ctf{',  # Flag
+            'total ', 'drwx', '-rw-',  # ls 输出
+            'inet ', 'ether ',  # ifconfig 输出
+        ]
 
-        return has_system_cmd and has_output and not is_error
+        has_cmd_result = any(ind in result_lower for ind in cmd_success_indicators)
+
+        # 4. 排除错误
+        is_error = any(err in result_lower for err in [
+            'command not found', 'permission denied', 'cannot access',
+            'no such file', 'failed', 'error', '404', '403', '500',
+            'connection refused', 'timeout'
+        ])
+
+        # 5. 有实质性输出
+        has_output = len(result.strip()) > 20
+
+        return has_exploit and is_remote_target and (has_cmd_result or (has_output and not is_error))
 
     def is_achieved(self, phase: CTFPhase) -> bool:
         """检查某个阶段是否已达成"""

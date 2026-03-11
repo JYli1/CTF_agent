@@ -21,7 +21,7 @@ import json
 console = Console()
 
 class CTFAgent:
-    def __init__(self, reporter=None):
+    def __init__(self, reporter=None, event_callback=None):
         # Initialize Experts
         self.strategist = CTFStrategist()
         self.python_coder = PythonCoder()
@@ -33,6 +33,9 @@ class CTFAgent:
 
         # Reporter
         self.reporter = reporter
+
+        # Event callback (for WebSocket)
+        self.event_callback = event_callback
 
         # Phase Tracker
         self.phase_tracker = PhaseTracker()
@@ -110,6 +113,14 @@ class CTFAgent:
 
         # Configuration
         self.max_sub_steps = 5
+
+    def _emit_event(self, event_type: str, data: dict):
+        """发射事件（用于 WebSocket 推送）"""
+        if self.event_callback:
+            try:
+                self.event_callback(event_type, data)
+            except Exception as e:
+                print(f"[警告] 事件回调失败: {e}")
 
     def set_target(self, url: str):
         self.strategist.set_target(url)
@@ -577,6 +588,39 @@ language: 语言名称（如Python、PHP、JavaScript等）
                 json_str = text.strip()
 
             data = json.loads(json_str)
+
+            # 检查是否报告了新阶段
+            if data.get('phase_achieved'):
+                phase_name = data['phase_achieved']
+                from src.core.phase_tracker import CTFPhase
+
+                # 将字符串转换为枚举
+                phase_map = {
+                    "文件读取": CTFPhase.FILE_READING,
+                    "代码执行": CTFPhase.CODE_EXECUTION,
+                    "命令执行": CTFPhase.COMMAND_EXECUTION
+                }
+
+                if phase_name in phase_map:
+                    phase = phase_map[phase_name]
+                    if not self.phase_tracker.is_achieved(phase):
+                        self.phase_tracker.achieved_phases.add(phase)
+                        self.new_phase_achieved = phase
+                        print(f"\n🎯 [阶段突破] {phase.value}")
+
+                        # 发送事件
+                        if self.event_callback:
+                            self._emit_event('phase_achieved', {
+                                'phase': phase.value,
+                                'phases': [p.value for p in self.phase_tracker.get_achieved_phases()]
+                            })
+
+                        # 记录到 Reporter
+                        if self.reporter:
+                            self.reporter.log_event("phase_achieved",
+                                phase=phase.value,
+                                all_phases=[p.value for p in self.phase_tracker.get_achieved_phases()]
+                            )
 
             # 检查是否找到flag
             if data.get('flag'):

@@ -73,9 +73,35 @@ CTF_STRATEGIST_PROMPT = """# 角色：CTF 战略专家 (Strategist)
     "agent": "Python专家",
     "task": "具体任务描述"
   },
-  "flag": null
+  "flag": null,
+  "phase_achieved": null
 }
 ```
+
+**phase_achieved 字段说明（重要）：**
+
+当你发现团队成功在目标网站上实现了以下突破时，必须在此字段报告：
+
+- `"文件读取"` - 成功通过漏洞读取了目标服务器的文件（如 /etc/passwd, flag.txt, config.php 等）
+  - 示例：通过 LFI 读取到了 /etc/passwd 内容
+  - 示例：通过 XXE 读取到了 flag.txt
+  - 示例：通过 SSRF 读取到了内网文件
+
+- `"代码执行"` - 成功在目标服务器上执行了任意代码（RCE）
+  - 示例：通过 eval() 注入执行了 PHP 代码
+  - 示例：通过反序列化执行了恶意代码
+  - 示例：通过模板注入执行了 Python 代码
+
+- `"命令执行"` - 成功在目标服务器上执行了系统命令
+  - 示例：通过命令注入执行了 whoami 并看到了 www-data
+  - 示例：通过 RCE 执行了 ls 并列出了文件
+  - 示例：获取了 Shell 并执行了系统命令
+
+**注意：**
+- 这些阶段指的是在**目标网站/服务器**上的突破，不是本地操作
+- 只有确认成功实现了这些突破时才报告
+- 一次只报告一个阶段（最新达成的）
+- 如果没有新的阶段突破，保持为 null
 
 **action.type 可选值：**
 - `"assign_task"` - 指派任务给专家

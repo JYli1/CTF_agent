@@ -2,6 +2,7 @@ import sys
 import os
 import datetime
 import time
+import argparse
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -11,7 +12,7 @@ from src.utils.reporter import Reporter
 
 console = Console()
 
-def main():
+def run_cli_mode():
     # 1. 显示欢迎界面
     console.print(Panel.fit(
         "[bold cyan]CTF Agent 自动解题系统[/bold cyan]\n"
@@ -175,6 +176,23 @@ def main():
             console.print("[yellow]没有足够的历史记录生成总结。[/yellow]")
     else:
         console.print("[dim]已取消存入。[/dim]")
+
+def main():
+    """主入口"""
+    parser = argparse.ArgumentParser(description='CTF Agent - 自动解题系统')
+    parser.add_argument('--web', action='store_true', help='启动 Web 模式')
+    parser.add_argument('--port', type=int, default=5000, help='Web 端口（默认: 5000）')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Web 监听地址（默认: 0.0.0.0）')
+
+    args = parser.parse_args()
+
+    if args.web:
+        # Web 模式
+        from webui.app import run_web_server
+        run_web_server(host=args.host, port=args.port)
+    else:
+        # CLI 模式
+        run_cli_mode()
 
 if __name__ == "__main__":
     try:
