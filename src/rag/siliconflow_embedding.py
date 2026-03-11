@@ -27,6 +27,9 @@ class SiliconFlowEmbeddingFunction(EmbeddingFunction):
         self.model = model
         self.endpoint = f"{self.base_url}/embeddings"
 
+    def name(self) -> str:
+        return f"siliconflow_{self.model.replace('/', '_')}"
+
     def __call__(self, input: Documents) -> List[List[float]]:
         """
         生成文本的 embedding 向量

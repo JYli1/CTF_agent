@@ -26,6 +26,7 @@ createApp({
         const socket = ref(null);
         
         const currentEvents = ref([]);
+        const expandedThinking = ref(new Set());
         
         const showConfig = ref(false);
         const configData = ref({});
@@ -136,6 +137,13 @@ createApp({
 
         const renderMarkdown = (text) => {
             return marked.parse(text || '');
+        };
+
+        const toggleThinking = (idx) => {
+            const s = new Set(expandedThinking.value);
+            if (s.has(idx)) s.delete(idx);
+            else s.add(idx);
+            expandedThinking.value = s;
         };
 
         const eventColor = (type) => {
@@ -272,7 +280,15 @@ createApp({
                 const res = await api.step(sessionId.value, input, autoMode.value);
                 
                 if (res.success) {
-                    messages.value.push({ role: 'assistant', content: res.response });
+                    const eventsSnapshot = [...currentEvents.value];
+                    messages.value.push({ role: 'assistant', content: res.response, events: eventsSnapshot });
+                    const newIdx = messages.value.length - 1;
+                    if (eventsSnapshot.length > 0) {
+                        const s = new Set(expandedThinking.value);
+                        s.add(newIdx);
+                        expandedThinking.value = s;
+                    }
+                    currentEvents.value = [];
                     if (res.state) sessionState.value = res.state;
                     if (res.progress !== undefined) progress.value = res.progress;
                     if (res.phases) phases.value = res.phases;
@@ -322,7 +338,8 @@ createApp({
                     if (r.findings && r.findings.length) {
                         content += `\n\n**Findings:**\n- ${r.findings.join('\n- ')}`;
                     }
-                    messages.value.push({ role: 'assistant', content });
+                    messages.value.push({ role: 'assistant', content, events: [...currentEvents.value] });
+                    currentEvents.value = [];
                 }
             } catch (e) {
                 errorMsg.value = e.response?.data?.error?.message || e.message;
@@ -343,10 +360,10 @@ createApp({
         return {
             sessionId, targetUrl, sessionState, progress, phases, flags,
             messages, userInput, autoMode, isProcessing, errorMsg, connected,
-            currentEvents, showConfig, configData, skills,
+            currentEvents, expandedThinking, showConfig, configData, skills,
             sidebarWidth, startResize,
             setTarget, sendStep, resetSession, fetchConfig, executeSkill,
-            renderMarkdown, eventColor, difficultyColor
+            toggleThinking, renderMarkdown, eventColor, difficultyColor
         };
     }
 }).mount('#app');

@@ -35,6 +35,7 @@ class RAGSystem:
                 base_url=Config.EMBEDDING_BASE_URL,
                 model=Config.EMBEDDING_MODEL
             )
+            self.embedding_function = embedding_function  # 保存为实例属性
             print(f"[RAG] 使用硅基流动 Embedding: {Config.EMBEDDING_MODEL}")
         except Exception as e:
             raise RuntimeError(f"❌ 初始化硅基流动 Embedding 失败: {e}")
