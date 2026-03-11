@@ -18,21 +18,26 @@ class RAGSystem:
         # 初始化 ChromaDB 客户端
         self.client = chromadb.PersistentClient(path=self.persist_path)
 
-        # 初始化硅基流动 Embedding Function
-        embedding_function = None
-        if Config.EMBEDDING_API_KEY:
-            try:
-                embedding_function = SiliconFlowEmbeddingFunction(
-                    api_key=Config.EMBEDDING_API_KEY,
-                    base_url=Config.EMBEDDING_BASE_URL,
-                    model=Config.EMBEDDING_MODEL
-                )
-                print(f"[RAG] 使用硅基流动 Embedding: {Config.EMBEDDING_MODEL}")
-            except Exception as e:
-                print(f"[警告] 硅基流动 Embedding 初始化失败: {e}")
-                print("[RAG] 回退到默认 Embedding (all-MiniLM-L6-v2)")
-        else:
-            print("[RAG] 未配置 EMBEDDING_API_KEY，使用默认 Embedding (all-MiniLM-L6-v2)")
+        # 强制使用硅基流动 Embedding，不使用默认模型
+        if not Config.EMBEDDING_API_KEY:
+            raise ValueError(
+                "❌ 未配置 EMBEDDING_API_KEY！\n\n"
+                "请在 .env 文件中配置:\n"
+                "EMBEDDING_API_KEY=你的硅基流动API_KEY\n"
+                "EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1\n"
+                "EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5\n\n"
+                "获取 API Key: https://cloud.siliconflow.cn/"
+            )
+
+        try:
+            embedding_function = SiliconFlowEmbeddingFunction(
+                api_key=Config.EMBEDDING_API_KEY,
+                base_url=Config.EMBEDDING_BASE_URL,
+                model=Config.EMBEDDING_MODEL
+            )
+            print(f"[RAG] 使用硅基流动 Embedding: {Config.EMBEDDING_MODEL}")
+        except Exception as e:
+            raise RuntimeError(f"❌ 初始化硅基流动 Embedding 失败: {e}")
 
         # 创建或获取集合
         self.collection = self.client.get_or_create_collection(
