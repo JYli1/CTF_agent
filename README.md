@@ -4,6 +4,7 @@
 
 ## 功能特性
 
+- **多专家协作架构**: 采用 CTF 战略专家、Python 编程专家和安全渗透专家分工协作的模式，提高解题效率和准确性。
 - **双模式执行**: 自动识别并分流执行本地 Python 代码和远程 SSH Shell 命令。
 - **RAG 知识库**: 内置知识库检索系统，支持加载 Markdown 格式的 CTF 技巧和 Writeup，辅助模型生成更准确的方案。
 - **SSH 集成**: 支持通过 SSH 连接到远程 Linux (如 Kali) 环境，允许 Agent 调用 `nmap`, `netcat`, `metasploit` 等原生安全工具。
@@ -46,19 +47,27 @@ pip install -r requirements.txt
 在项目根目录下创建一个 `.env` 文件，参考以下模板进行配置：
 
 ```ini
-# --- LLM 模型配置 ---
+# --- LLM 模型全局配置 (默认) ---
 # 提供商选择: "modelscope" (默认) 或 "openai"
 LLM_PROVIDER=modelscope
-
-# DashScope (通义千问) API Key
 DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxx
-
-# OpenAI API Key (如果使用 OpenAI)
-# OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
-# OPENAI_BASE_URL=https://api.openai.com/v1
-
-# 模型名称指定
 MODEL_NAME=deepseek-ai/DeepSeek-V3.2
+
+# --- 专家专属配置 (可选，默认使用全局配置) ---
+# CTF 战略专家
+# CTF_API_KEY=sk-xxxx
+# CTF_BASE_URL=...
+# CTF_MODEL=deepseek-reasoner
+
+# Python 编程专家
+# PYTHON_API_KEY=sk-xxxx
+# PYTHON_BASE_URL=...
+# PYTHON_MODEL=gpt-4o
+
+# 安全渗透专家
+# SECURITY_API_KEY=sk-xxxx
+# SECURITY_BASE_URL=...
+# SECURITY_MODEL=claude-3-5-sonnet
 
 # --- 存储路径配置 ---
 CHROMA_DB_DIR=data/chroma_db
@@ -89,9 +98,7 @@ python ingest_docs.py
 python main.py
 ```
 
-启动后，您可以直接与 Agent 对话。例如：
-- "帮我写一个 Python 脚本来爆破这个 zip 文件"
-- "连接 SSH 扫描目标主机 192.168.1.5 的开放端口"
+启动后，Agent 将自动进入交互模式。您可以输入题目 URL 或直接下达指令。Agent 会自动调度不同的专家角色进行分析、代码编写和渗透测试。
 
 ## 目录结构
 
@@ -101,9 +108,13 @@ ctf_agent/
 │   ├── chroma_db/       # 向量数据库存储
 │   └── knowledge_base/  # RAG 知识库文档 (.md)
 ├── src/
-│   ├── core/            # 核心逻辑 (Agent, LLM)
+│   ├── core/            # 核心逻辑
+│   │   ├── agents/      # 专家 Agent 实现 (Strategist, Python, Security)
+│   │   ├── agent.py     # 协调器 (Coordinator)
+│   │   ├── llm.py       # LLM 接口
+│   │   └── prompts.py   # 提示词定义
 │   ├── rag/             # 检索增强生成模块
-│   ├── tools/           # 执行工具 (PythonExecutor, SSHExecutor)
+│   ├── tools/           # 执行工具 (CodeExecutor, SSHExecutor)
 │   └── utils/           # 配置与辅助函数
 ├── ingest_docs.py       # 知识库导入脚本
 ├── main.py              # 主程序入口

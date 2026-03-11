@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install rich)",
+      "WebSearch",
+      "WebFetch(domain:docs.siliconflow.cn)",
+      "Bash(pip install chromadb requests -q)",
+      "Bash(python test_skills.py)",
+      "Bash(iconv -f gbk -t utf-8)",
+      "Bash(python skill_cli.py show web_sqli)",
+      "Bash(mkdir -p .archive)",
+      "Bash(mv rework.md IMPROVEMENT_PLAN.md SKILLS_DESIGN.md .archive/)",
+      "Bash(ls -t *.md)",
+      "Bash(xargs rm -f)",
+      "Bash(ls -lh test_*.py)",
+      "Bash(ls data/logs/*.md)",
+      "Bash(ls data/knowledge_base/auto_learned_*.md)",
+      "Bash(python -c \"import sys; sys.stdout.reconfigure\\(encoding=''utf-8''\\); exec\\(open\\(''test_continuous_detection.py'', encoding=''utf-8''\\).read\\(\\)\\)\")"
+    ]
+  }
+}

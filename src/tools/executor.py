@@ -2,6 +2,8 @@ import sys
 import io
 import contextlib
 import paramiko
+import os
+import time
 from src.utils.config import Config
 
 class CodeExecutor:
@@ -14,16 +16,24 @@ class CodeExecutor:
             "bs4": __import__("bs4"),
             "re": __import__("re"),
             "json": __import__("json"),
-            "base64": __import__("base64")
+            "base64": __import__("base64"),
+            "hashlib": __import__("hashlib"),
+            "socket": __import__("socket"),
+            "struct": __import__("struct"),
+            "time": __import__("time"),
+            "sys": sys,
+            "os": os
         }
 
     def execute(self, code: str) -> str:
         """
         执行代码并捕获 stdout/stderr。
         """
+        print(f"[执行器] ▶️ 开始执行Python代码 ({time.strftime('%H:%M:%S')})")
+
         # 创建字符串缓冲区以捕获输出
         f = io.StringIO()
-        
+
         try:
             with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
                 # 在受限的全局变量中执行代码
@@ -78,6 +88,8 @@ class SSHExecutor:
         """
         执行 Shell 命令。
         """
+        print(f"[执行器] ▶️ 开始执行SSH命令 ({time.strftime('%H:%M:%S')})")
+
         if not self.connected:
             res = self.connect()
             if "Failed" in res or "not configured" in res or "错误" in res or "失败" in res:

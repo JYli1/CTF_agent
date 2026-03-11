@@ -1,178 +1,184 @@
 import sys
 import os
+import datetime
+import time
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 from src.core.agent import CTFAgent
-from src.tools.executor import CodeExecutor, SSHExecutor
 from src.utils.config import Config
 from src.utils.reporter import Reporter
 
+console = Console()
+
 def main():
-    # 1. 验证
-    Config.validate()
-    
-    print("=== CTF Agent 命令行工具 ===")
-    print("输入 'exit' 或 'quit' 退出程序。")
-    
-    # 2. 初始化
-    agent = CTFAgent()
-    code_executor = CodeExecutor()
-    ssh_executor = SSHExecutor()
-    reporter = Reporter()
-    
-    # 模式选择
-    print("\n请选择运行模式:")
-    print("1. 辅助做题 (交互式，每步等待用户指令)")
-    print("2. 自动做题 (自动循环，直到找到 Flag)")
-    mode_choice = input("请输入选项 (1/2) [默认: 2]: ").strip()
-    
+    # 1. 显示欢迎界面
+    console.print(Panel.fit(
+        "[bold cyan]CTF Agent 自动解题系统[/bold cyan]\n"
+        "[dim]多专家协作 · RAG知识增强 · 智能解题[/dim]",
+        border_style="cyan"
+    ))
+
+    # 2. 验证配置
+    with console.status("[bold green]正在验证配置..."):
+        Config.validate()
+    console.print("[green]✓[/green] 配置验证通过")
+
+    # 3. 初始化
+    with console.status("[bold green]正在初始化Agent..."):
+        reporter = Reporter()
+        agent = CTFAgent(reporter=reporter)
+    console.print("[green]✓[/green] Agent初始化完成")
+
+    # 4. 模式选择
+    table = Table(show_header=True, header_style="bold magenta", border_style="blue")
+    table.add_column("选项", style="cyan", width=6, justify="center")
+    table.add_column("模式", style="green", width=12)
+    table.add_column("说明", style="yellow")
+
+    table.add_row("1", "自动模式", "全程无需干预，自动分析直到获取 Flag")
+    table.add_row("2", "交互模式", "每一步由用户下达指令，可控性强")
+
+    console.print(table)
+
+    mode_choice = console.input("\n[bold cyan]请选择模式 (1/2) [默认: 1]:[/bold cyan] ").strip()
+
     auto_mode = True
-    if mode_choice == '1':
+    if mode_choice == '2':
         auto_mode = False
-        print("已切换至 [辅助做题] 模式。")
+        console.print("[yellow]已切换至交互模式[/yellow]")
     else:
-        print("已切换至 [自动做题] 模式。")
-    
-    target_url = input("\n请输入目标题目 URL (如果没有请直接回车): ").strip()
+        console.print("[green]已切换至自动模式[/green]")
+
+    target_url = console.input("\n[bold cyan]请输入目标题目 URL (没有请直接回车):[/bold cyan] ").strip()
     if target_url:
         agent.set_target(target_url)
-        print(f"目标已设置为: {target_url}")
-        
-    # 如果是自动模式且设置了 URL，开始自动循环的初始输入
+        reporter.start_session(target_url)
+        console.print(f"[green]✓[/green] 目标已设置为: [bold]{target_url}[/bold]")
+    else:
+        reporter.start_session()
+
+    console.print(Panel("[bold green]Agent 已就绪，开始解题！[/bold green]", border_style="green", expand=False))
+
+    # 初始输入
     current_input = ""
-    no_code_counter = 0 # 连续未生成代码的计数器
-    
     if auto_mode and target_url:
-        current_input = "请开始分析目标并寻找 Flag。"
-        
+        current_input = "请开始对目标 URL 进行全面分析，并寻找 Flag。"
+    elif not auto_mode:
+        console.print("[dim]您可以直接下达指令，例如 '开始分析' 或 '帮我扫描端口'。[/dim]")
+
     while True:
         try:
-            # 如果是辅助模式，或者自动模式下当前没有待处理的输入（初始状态或需要人工干预）
-            if not auto_mode or not current_input:
-                user_input = input("\n[用户]> ").strip()
+            # 获取输入
+            if not current_input:
+                user_input = console.input("\n[bold cyan][用户]>[/bold cyan] ").strip()
                 if user_input.lower() in ['exit', 'quit']:
                     break
                 if not user_input:
                     continue
                 current_input = user_input
-                no_code_counter = 0 # 用户介入后重置计数器
 
-            print("\n[AGENT] 正在思考...")
-            
-            # Agent 步骤
+            console.print("\n[bold yellow]正在调度专家团队...[/bold yellow]")
+
+            # Agent 运行
             response = agent.run_step(current_input)
-            print(f"\n[AGENT]> {response}")
-            
-            # 检查是否有代码执行
-            code_type, code = agent.extract_code(response)
-            if code:
-                no_code_counter = 0 # 有代码，重置计数器
-                print(f"\n[系统] 检测到 {code_type} 代码。正在执行...")
-                print("-" * 20)
-                print(code)
-                print("-" * 20)
-                
-                execution_result = ""
-                if code_type == 'python':
-                    execution_result = code_executor.execute(code)
-                elif code_type == 'bash':
-                    execution_result = ssh_executor.execute(code)
-                else:
-                    execution_result = f"错误: 未知的代码类型 {code_type}"
 
-                print(f"[执行结果]\n{execution_result}")
-                
-                # 将结果反馈给 Agent
-                follow_up_msg = f"代码执行输出:\n{execution_result}\n\n你找到 Flag 了吗？如果没有，下一步该怎么做？"
-                
-                if auto_mode:
-                    # 自动模式下，直接将反馈作为下一轮的输入
-                    # 检查是否找到 Flag
-                    if "FLAG:" in response or "ctf{" in response.lower() or "flag{" in response.lower():
-                        print("\n[系统] 似乎找到了 Flag，停止自动循环。")
-                        current_input = "" # 停止自动循环，等待用户
-                    else:
-                        current_input = follow_up_msg
-                        print("\n[系统] (自动模式) 继续分析执行结果...")
-                        # 添加简单的延迟以避免刷屏过快
-                        import time
-                        time.sleep(1)
+            console.print(Panel(
+                response,
+                title="[bold]CTF 战略专家",
+                border_style="cyan"
+            ))
+
+            # 显示阶段达成情况
+            phase_summary = agent.phase_tracker.get_phase_summary()
+            console.print(f"\n[bold cyan]解题进度：[/bold cyan]{phase_summary}")
+
+            # 检查是否达成新阶段
+            if agent.new_phase_achieved:
+                console.print(Panel(
+                    f"[bold green]🎯 新阶段达成：{agent.new_phase_achieved.value}[/bold green]\n\n"
+                    f"当前已达成的阶段：\n" + "\n".join([f"  ✓ {p.value}" for p in agent.phase_tracker.get_achieved_phases()]),
+                    border_style="green",
+                    title="[bold green]阶段进展"
+                ))
+
+                # 半自动模式：暂停并等待用户建议
+                if not auto_mode:
+                    console.print("\n[yellow]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/yellow]")
+                    console.print("[bold yellow]⏸️  半自动模式：达成新阶段，暂停等待用户建议[/bold yellow]")
+                    console.print("[yellow]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/yellow]")
+                    user_suggestion = console.input("\n[bold cyan]请输入下一步建议 (直接回车继续当前策略):[/bold cyan] ").strip()
+                    if user_suggestion:
+                        current_input = user_suggestion
+                        continue
+
+            # 自动模式逻辑处理
+            if auto_mode:
+                # 检查Agent的flag_found状态
+                if agent.flag_found:
+                    console.print(Panel(
+                        f"[bold green]✓ 检测到Flag，自动任务结束！[/bold green]\n\n"
+                        f"发现的Flag:\n" + "\n".join([f"  • {flag}" for flag in agent.found_flags]),
+                        border_style="green",
+                        title="[bold green]任务完成"
+                    ))
+                    break
                 else:
-                    # 辅助模式下，执行一次反馈步骤（之前的逻辑是执行一次反馈，现在我们可以保持这个逻辑）
-                    response_2 = agent.run_step(follow_up_msg)
-                    print(f"\n[AGENT]> {response_2}")
-                    current_input = "" # 清空，等待用户输入
+                    console.print("[dim](自动模式) 未检测到Flag，继续分析...[/dim]")
+                    current_input = "请根据当前结果，继续制定下一步计划并执行。如果卡住了，请尝试其他思路。"
+                    time.sleep(2)
             else:
-                # 没有代码执行
-                if auto_mode:
-                    # 如果没有代码，Agent 只是在说话。
-                    # 检查是否包含 Flag
-                    if "FLAG:" in response or "ctf{" in response.lower() or "flag{" in response.lower():
-                        print("\n[系统] 似乎找到了 Flag，停止自动循环。")
-                        current_input = ""
-                    else:
-                        no_code_counter += 1
-                        if no_code_counter >= 3:
-                            print(f"\n[系统] Agent 连续 {no_code_counter} 次未生成代码，暂停自动循环，等待人工干预。")
-                            current_input = ""
-                            no_code_counter = 0
-                        else:
-                            # 鼓励 Agent 继续尝试
-                            print(f"\n[系统] Agent 未生成代码 (连续 {no_code_counter} 次)。要求其继续尝试...")
-                            current_input = "请继续分析，如果你需要验证想法，请务必编写并执行 Python 代码。"
-                            import time
-                            time.sleep(1)
-                else:
-                    current_input = ""
+                current_input = ""
 
         except KeyboardInterrupt:
-            print("\n正在退出...")
+            console.print("\n[yellow]正在退出...[/yellow]")
             break
         except Exception as e:
-            print(f"发生错误: {e}")
-            current_input = "" # 出错时重置输入，等待用户干预
+            console.print(f"[red]发生错误: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+            current_input = ""
 
     # 保存会话
-    print("\n正在保存会话报告...")
+    console.print("\n[dim]正在保存会话报告...[/dim]")
     report_path = reporter.create_report("session_log", agent.history)
-    print(f"报告已保存至 {report_path}")
-    
-    # 关闭 SSH 连接
-    ssh_executor.close()
+    console.print(f"[green]✓[/green] 报告已保存至 {report_path}")
 
-    # 3. 学习与经验回存
-    save_to_kb = input("\n是否将本次会话总结并存入知识库以供未来学习？(y/n): ").strip().lower()
+    # 关闭资源
+    agent.close()
+
+    # 学习与经验回存
+    save_to_kb = console.input("\n[bold cyan]是否将本次会话总结并存入知识库？(y/n):[/bold cyan] ").strip().lower()
     if save_to_kb == 'y':
-        # 1. 生成总结
         summary = agent.summarize_session()
-        print("\n=== 生成的 Writeup 摘要 ===")
-        print(summary)
-        print("===========================")
-        
-        confirm = input("\n确认存入数据库吗？(y/n): ").strip().lower()
-        if confirm == 'y':
-            # 2. 存入 RAG
-            # 使用当前时间戳作为源标识
-            import datetime
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            source_name = f"auto_learned_{timestamp}.md"
-            
-            # 同时保存一份 md 文件到知识库目录（作为备份和持久化）
-            kb_dir = "data/knowledge_base"
-            if not os.path.exists(kb_dir):
-                os.makedirs(kb_dir)
-            
-            kb_file_path = os.path.join(kb_dir, source_name)
-            with open(kb_file_path, 'w', encoding='utf-8') as f:
-                f.write(summary)
-            
-            # 添加到向量数据库
-            agent.rag.add_document(summary, metadata={"source": source_name, "type": "auto_learned"})
-            print(f"\n[成功] 经验已存入知识库！文件备份于: {kb_file_path}")
+        if summary:
+            console.print(Panel(summary, title="[bold]生成的 Writeup 摘要", border_style="green"))
+
+            confirm = console.input("[bold cyan]确认存入数据库吗？(y/n):[/bold cyan] ").strip().lower()
+            if confirm == 'y':
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                source_name = f"auto_learned_{timestamp}.md"
+
+                kb_dir = Config.KNOWLEDGE_BASE_DIR
+                if not os.path.exists(kb_dir):
+                    os.makedirs(kb_dir)
+
+                kb_file_path = os.path.join(kb_dir, source_name)
+                with open(kb_file_path, 'w', encoding='utf-8') as f:
+                    f.write(summary)
+
+                agent.rag.add_document(summary, metadata={"source": source_name, "type": "auto_learned"})
+                console.print(f"[green]✓[/green] 经验已存入知识库！文件备份于: {kb_file_path}")
+            else:
+                console.print("[dim]已取消存入。[/dim]")
         else:
-            print("已取消存入。")
+            console.print("[yellow]没有足够的历史记录生成总结。[/yellow]")
+    else:
+        console.print("[dim]已取消存入。[/dim]")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n[提示] 程序已由用户中断退出。再见！")
+        console.print("\n\n[yellow]程序已由用户中断退出。再见！[/yellow]")
         sys.exit(0)
