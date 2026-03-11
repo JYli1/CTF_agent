@@ -10,8 +10,10 @@ env/
 .env
 
 # 数据库和本地存储
-data/chroma_db/
-data/logs/
+data/chroma_db/*
+!data/chroma_db/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
 *.db
 *.sqlite3
 
