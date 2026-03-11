@@ -19,6 +19,7 @@ class RAGSystem:
         self.client = chromadb.PersistentClient(path=self.persist_path)
 
         # 初始化硅基流动 Embedding Function
+        self.embedding_function = None
         embedding_function = None
         if Config.EMBEDDING_API_KEY:
             try:
@@ -27,6 +28,7 @@ class RAGSystem:
                     base_url=Config.EMBEDDING_BASE_URL,
                     model=Config.EMBEDDING_MODEL
                 )
+                self.embedding_function = embedding_function
                 print(f"[RAG] 使用硅基流动 Embedding: {Config.EMBEDDING_MODEL}")
             except Exception as e:
                 print(f"[警告] 硅基流动 Embedding 初始化失败: {e}")
@@ -35,10 +37,22 @@ class RAGSystem:
             print("[RAG] 未配置 EMBEDDING_API_KEY，使用默认 Embedding (all-MiniLM-L6-v2)")
 
         # 创建或获取集合
-        self.collection = self.client.get_or_create_collection(
-            name="ctf_knowledge_base",
-            embedding_function=embedding_function
-        )
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name="ctf_knowledge_base",
+                embedding_function=embedding_function
+            )
+        except ValueError as e:
+            if "Embedding function conflict" in str(e):
+                print("[警告] 检测到 Embedding 函数冲突，正在重建集合...")
+                self.client.delete_collection(name="ctf_knowledge_base")
+                self.collection = self.client.get_or_create_collection(
+                    name="ctf_knowledge_base",
+                    embedding_function=embedding_function
+                )
+                print("[OK] 集合已重建")
+            else:
+                raise
 
         self.chunker = SimpleChunker()
 
@@ -242,7 +256,10 @@ class RAGSystem:
     def clear_all(self):
         """清空整个知识库"""
         self.client.delete_collection(name="ctf_knowledge_base")
-        self.collection = self.client.get_or_create_collection(name="ctf_knowledge_base")
+        self.collection = self.client.get_or_create_collection(
+            name="ctf_knowledge_base",
+            embedding_function=self.embedding_function
+        )
         print("[OK] 知识库已清空")
 
     def get_all_file_records(self) -> Dict[str, Dict]:
